@@ -1,7 +1,7 @@
 # PDF-file-tiler
 Breaks a large PDF A0 or A1 into A4-sized tiles. These can be pasted back together to make the whole picture.
 
-This tool can be beneficial for many engineering and architecture students who tend to work at night when all the Jumbo Photocopy (xerox) shops are closed, and they need something to Glass Trace (GT) or Topo a large page-size format to a smaller A4-sized format, which can be printed on the home printer and pasted together to create the original A1 or A0 size again. <img width="700" height="200" alt="image" src="https://github.com/user-attachments/assets/be44b290-f102-4c9a-bd7c-a25f33e545bb" />
+This tool can be beneficial for many engineering and architecture students who tend to work at night when all the Jumbo Photocopy (xerox) shops are closed, and they need something to Glass Trace (GT) or Topo a large page-size format to a smaller A4-sized format, which can be printed on the home printer and pasted together to create the original A1 or A0 size again.
 
 
 Only examples of A0, A1, and A4 are given. But the tool consists of many more page sizes. 
