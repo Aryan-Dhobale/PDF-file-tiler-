@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PosterSlice - PDF Page Tiler & Poster Splitter</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- jsPDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- JSZip -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; margin: 0; padding: 0; }
+        
+        /* Interactive Viewport Background */
+        .checkerboard {
+            background-color: #cbd5e1;
+            background-image: linear-gradient(45deg, #94a3b8 25%, transparent 25%), linear-gradient(-45deg, #94a3b8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #94a3b8 75%), linear-gradient(-45deg, transparent 75%, #94a3b8 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        .dark .checkerboard {
+            background-color: #0f172a;
+            background-image: linear-gradient(45deg, #1e293b 25%, transparent 25%), linear-gradient(-45deg, #1e293b 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #1e293b 75%), linear-gradient(-45deg, transparent 75%, #1e293b 75%);
+        }
+
+        .canvas-shadow {
+            box-shadow: 0 20px 30px -10px rgba(0, 0, 0, 0.3), 0 10px 15px -5px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Custom minimal scrollbar */
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+    </style>
+</head>
+<body id="appBody" class="h-screen flex flex-col bg-slate-100 dark:bg-slate-950 text-slate-800 dark:text-slate-100 antialiased select-none overflow-hidden transition-colors duration-200">
+
+    <!-- Top Navigation Header (Slim Height) -->
+    <header class="bg-slate-900 text-white border-b border-slate-800 px-3 py-1.5 shrink-0 z-30 shadow-md">
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-2">
+            <div class="flex items-center space-x-2">
+                <div class="p-1 bg-indigo-600 rounded-lg shadow-inner flex items-center justify-center">
+                    <i data-lucide="grid-3x3" class="w-4 h-4 text-white"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-sm leading-tight tracking-wide flex items-center gap-1.5">
+                        PosterSlice
+                        <span class="text-[9px] uppercase tracking-wider bg-indigo-500/30 text-indigo-300 font-semibold px-1.5 py-0.2 rounded border border-indigo-400/30">PDF Tiler</span>
+                    </h1>
+                </div>
+            </div>
+            
+            <div class="flex items-center space-x-1.5">
+                <!-- Dark / Light Theme Toggle Button -->
+                <button id="btnThemeToggle" title="Toggle Dark/Light Mode" class="p-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 dark:text-indigo-300 rounded-lg text-xs font-semibold flex items-center justify-center transition border border-slate-700">
+                    <i id="themeIcon" data-lucide="sun" class="w-3.5 h-3.5"></i>
+                </button>
+                
+                <!-- Instant Header Download Button -->
+                <button id="btnHeaderDownloadPdf" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center space-x-1 transition shadow">
+                    <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                    <span class="hidden sm:inline">Download Tiled PDF</span>
+                </button>
+                <button id="btnSamplePdf" class="px-2 py-1 bg-indigo-600/90 hover:bg-indigo-600 text-white rounded-lg text-xs font-semibold flex items-center space-x-1 transition shadow">
+                    <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-300"></i>
+                    <span class="hidden md:inline">Sample A1</span>
+                </button>
+                <button id="btnHelp" class="p-1.5 md:px-2 md:py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-medium flex items-center space-x-1 transition">
+                    <i data-lucide="help-circle" class="w-3.5 h-3.5"></i>
+                    <span class="hidden md:inline">Help</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace Layout (Full Height Fit) -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-2 md:p-3 grid grid-cols-1 lg:grid-cols-12 gap-3 overflow-hidden h-[calc(100vh-42px)]">
+
+        <!-- Left Controls Sidebar (4 Cols) - Equal 3-Row Vertical Division Without Scrollbar -->
+        <aside class="lg:col-span-4 flex flex-col h-full overflow-hidden">
+            
+            <!-- 3 Equal Row Grid Container -->
+            <div class="grid grid-rows-3 gap-2 flex-1 min-h-0 overflow-hidden">
+                
+                <!-- STEP 1: Source PDF Document (Row 1/3) -->
+                <div class="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-2 flex flex-col justify-between overflow-hidden">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-1.5 text-indigo-700 dark:text-indigo-400 font-bold text-xs">
+                            <span class="w-4 h-4 bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 rounded-full flex items-center justify-center text-[10px]">1</span>
+                            <h2 class="text-xs">Source PDF Document</h2>
+                        </div>
+                        <span id="fileBadge" class="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded font-medium">No File</span>
+                    </div>
+
+                    <!-- Row: 1/3 Upload Box + 2/3 PDF Info Metadata -->
+                    <div class="flex items-stretch space-x-2 my-1 flex-1 min-h-0">
+                        <!-- 1/3 Width Upload Dropzone Box -->
+                        <div id="dropzone" title="Click or drag PDF to upload" class="w-1/3 shrink-0 border border-dashed border-slate-300 dark:border-slate-700 hover:border-indigo-500 dark:hover:border-indigo-400 bg-slate-50 dark:bg-slate-800/80 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/40 rounded-lg transition cursor-pointer flex flex-col items-center justify-center p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 group">
+                            <input type="file" id="fileInput" accept="application/pdf" class="hidden">
+                            <i data-lucide="upload-cloud" class="w-5 h-5 group-hover:scale-110 transition text-indigo-600 dark:text-indigo-400"></i>
+                            <span class="text-[10px] font-bold text-slate-600 dark:text-slate-300 mt-1">Upload PDF</span>
+                        </div>
+
+                        <!-- 2/3 Width PDF Information Metadata -->
+                        <div class="w-2/3 min-w-0 bg-slate-50 dark:bg-slate-800/60 rounded-lg p-1.5 border border-slate-200 dark:border-slate-800 text-xs flex flex-col justify-between">
+                            <div class="flex items-center justify-between gap-1">
+                                <span class="font-bold text-slate-800 dark:text-slate-100 truncate text-[11px]" id="infoFileName">No file loaded</span>
+                                <span class="text-[9px] text-slate-400 font-mono shrink-0" id="infoFileSize">0 KB</span>
+                            </div>
+                            
+                            <div class="text-[10px] space-y-1 pt-1 border-t border-slate-200 dark:border-slate-700/60">
+                                <div class="flex items-center justify-between text-[9px] text-slate-600 dark:text-slate-300">
+                                    <span>Dim: <strong id="infoDimensions" class="text-indigo-700 dark:text-indigo-400 font-semibold">A1 (841x594mm)</strong></span>
+                                    <span>Pages: <strong id="infoTotalPages" class="text-indigo-700 dark:text-indigo-400 font-semibold">1</strong></span>
+                                </div>
+                                
+                                <div class="flex items-center justify-between gap-1">
+                                    <label for="selectPageNum" class="text-[9px] text-slate-500 dark:text-slate-400 font-medium shrink-0">Select Page:</label>
+                                    <select id="selectPageNum" class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-1 py-0.5 text-[10px] text-slate-700 dark:text-slate-200 font-semibold focus:ring-1 focus:ring-indigo-500 outline-none">
+                                        <option value="1">Page 1</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Source Preset & Rotation Row -->
+                    <div class="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-100 dark:border-slate-800">
+                        <div>
+                            <label for="selectSourcePreset" class="block text-[9px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Source Format Preset:</label>
+                            <select id="selectSourcePreset" class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md px-1 py-0.5 text-[10px] font-medium text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 outline-none">
+                                <option value="auto">Auto-Detect</option>
+                                <optgroup label="ISO A-Series">
+                                    <option value="4a0">4A0 (1682 x 2378 mm)</option>
+                                    <option value="2a0">2A0 (1189 x 1682 mm)</option>
+                                    <option value="a0">A0 (841 x 1189 mm)</option>
+                                    <option value="a1" selected>A1 (594 x 841 mm)</option>
+                                    <option value="a2">A2 (420 x 594 mm)</option>
+                                    <option value="a3">A3 (297 x 420 mm)</option>
+                                    <option value="a4">A4 (210 x 297 mm)</option>
+                                    <option value="a5">A5 (148 x 210 mm)</option>
+                                    <option value="a6">A6 (105 x 148 mm)</option>
+                                    <option value="a7">A7 (74 x 105 mm)</option>
+                                </optgroup>
+                                <optgroup label="ISO B-Series">
+                                    <option value="b0">B0 (1000 x 1414 mm)</option>
+                                    <option value="b1">B1 (707 x 1000 mm)</option>
+                                    <option value="b2">B2 (500 x 707 mm)</option>
+                                    <option value="b3">B3 (353 x 500 mm)</option>
+                                    <option value="b4">B4 (250 x 353 mm)</option>
+                                    <option value="b5">B5 (176 x 250 mm)</option>
+                                </optgroup>
+                                <optgroup label="ISO C Envelopes">
+                                    <option value="c4">C4 Envelope (229 x 324 mm)</option>
+                                    <option value="c5">C5 Envelope (162 x 229 mm)</option>
+                                    <option value="dl">DL Envelope (110 x 220 mm)</option>
+                                </optgroup>
+                                <optgroup label="North American / US Standard">
+                                    <option value="letter">US Letter (8.5 x 11 in)</option>
+                                    <option value="legal">US Legal (8.5 x 14 in)</option>
+                                    <option value="tabloid">US Tabloid (11 x 17 in)</option>
+                                    <option value="executive">US Executive (7.25 x 10.5 in)</option>
+                                    <option value="statement">US Statement (5.5 x 8.5 in)</option>
+                                </optgroup>
+                                <optgroup label="ANSI Engineering">
+                                    <option value="ansi_a">ANSI A (8.5 x 11 in)</option>
+                                    <option value="ansi_b">ANSI B (11 x 17 in)</option>
+                                    <option value="ansi_c">ANSI C (17 x 22 in)</option>
+                                    <option value="ansi_d">ANSI D (22 x 34 in)</option>
+                                    <option value="ansi_e">ANSI E (34 x 44 in)</option>
+                                </optgroup>
+                                <optgroup label="Architectural (Arch)">
+                                    <option value="arch_a">Arch A (9 x 12 in)</option>
+                                    <option value="arch_b">Arch B (12 x 18 in)</option>
+                                    <option value="arch_c">Arch C (18 x 24 in)</option>
+                                    <option value="arch_d">Arch D (24 x 36 in)</option>
+                                    <option value="arch_e">Arch E (36 x 48 in)</option>
+                                </optgroup>
+                                <optgroup label="Photo & Commercial Prints">
+                                    <option value="photo_4x6">4 x 6 inches</option>
+                                    <option value="photo_5x7">5 x 7 inches</option>
+                                    <option value="photo_8x10">8 x 10 inches</option>
+                                    <option value="poster_18x24">Medium Poster (18 x 24 in)</option>
+                                    <option value="poster_24x36">Large Poster (24 x 36 in)</option>
+                                </optgroup>
+                            </select>
+                        </div>
+
+                        <div>
+                            <div class="flex items-center justify-between mb-0.5">
+                                <label class="block text-[9px] font-semibold text-slate-500 dark:text-slate-400">Rotate PDF:</label>
+                                <span id="txtRotationBadge" class="px-1 py-0.2 bg-indigo-50 dark:bg-indigo-950 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 font-bold font-mono text-[9px] rounded">0°</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <button id="btnRotateCcw" title="Rotate Counter-Clockwise 90°" class="flex-1 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded text-[10px] transition border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-0.5">
+                                    <i data-lucide="rotate-ccw" class="w-3 h-3"></i> -90°
+                                </button>
+                                <button id="btnRotateCw" title="Rotate Clockwise 90°" class="flex-1 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded text-[10px] transition border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-0.5">
+                                    <i data-lucide="rotate-cw" class="w-3 h-3"></i> +90°
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Edit PDF Button Below Rotate Section -->
+                    <div class="pt-1.5 border-t border-slate-100 dark:border-slate-800 mt-1">
+                        <button id="btnEditPdf" class="w-full py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-md text-[11px] transition shadow-xs flex items-center justify-center space-x-1.5">
+                            <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+                            <span>Edit PDF (Doodle, Text & Crop)</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- STEP 2: Desired Output Page Setup (Row 2/3) -->
+                <div class="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-2 flex flex-col justify-between overflow-hidden">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-1.5 text-indigo-700 dark:text-indigo-400 font-bold text-xs">
+                            <span class="w-4 h-4 bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 rounded-full flex items-center justify-center text-[10px]">2</span>
+                            <h2 class="text-xs">Desired Output Page Setup</h2>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="selectTargetPreset" class="block text-[9px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Target Paper Size:</label>
+                        <select id="selectTargetPreset" class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md px-1.5 py-0.5 text-[11px] font-bold text-slate-800 dark:text-slate-100 focus:ring-1 focus:ring-indigo-500 outline-none">
+                            <optgroup label="ISO A-Series">
+                                <option value="a4" selected>A4 (210 x 297 mm) — Standard Printer</option>
+                                <option value="a3">A3 (297 x 420 mm) — Medium Format</option>
+                                <option value="a5">A5 (148 x 210 mm)</option>
+                                <option value="a2">A2 (420 x 594 mm)</option>
+                                <option value="a6">A6 (105 x 148 mm)</option>
+                            </optgroup>
+                            <optgroup label="ISO B-Series">
+                                <option value="b4">B4 (250 x 353 mm)</option>
+                                <option value="b5">B5 (176 x 250 mm)</option>
+                            </optgroup>
+                            <optgroup label="North American / US Standard">
+                                <option value="letter">US Letter (8.5 x 11 in / 216 x 279 mm)</option>
+                                <option value="legal">US Legal (8.5 x 14 in / 216 x 356 mm)</option>
+                                <option value="tabloid">US Tabloid / Ledger (11 x 17 in)</option>
+                                <option value="executive">US Executive (7.25 x 10.5 in)</option>
+                            </optgroup>
+                            <optgroup label="ANSI Engineering">
+                                <option value="ansi_a">ANSI A (8.5 x 11 in)</option>
+                                <option value="ansi_b">ANSI B (11 x 17 in)</option>
+                            </optgroup>
+                            <optgroup label="Architectural (Arch)">
+                                <option value="arch_a">Arch A (9 x 12 in)</option>
+                                <option value="arch_b">Arch B (12 x 18 in)</option>
+                            </optgroup>
+                            <optgroup label="Photo Papers">
+                                <option value="photo_4x6">Photo 4 x 6 inches</option>
+                                <option value="photo_5x7">Photo 5 x 7 inches</option>
+                                <option value="photo_8x10">Photo 8 x 10 inches</option>
+                            </optgroup>
+                        </select>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-1.5">
+                        <div>
+                            <label class="block text-[9px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Orientation:</label>
+                            <div class="flex bg-slate-100 dark:bg-slate-800 p-0.5 rounded-md border border-slate-200 dark:border-slate-700">
+                                <button id="btnOrientPortrait" class="flex-1 py-0.5 text-[9px] font-bold rounded bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 shadow-sm transition flex items-center justify-center gap-0.5">
+                                    <i data-lucide="file-text" class="w-2.5 h-2.5"></i> Portrait
+                                </button>
+                                <button id="btnOrientLandscape" class="flex-1 py-0.5 text-[9px] font-semibold rounded text-slate-600 dark:text-slate-400 transition flex items-center justify-center gap-0.5">
+                                    <i data-lucide="file-input" class="w-2.5 h-2.5 rotate-90"></i> Land
+                                </button>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="selectScaleMode" class="block text-[9px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Poster Scale:</label>
+                            <select id="selectScaleMode" class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 outline-none">
+                                <option value="100">100% (Actual)</option>
+                                <option value="125">125% Scale Up</option>
+                                <option value="150">150% Scale Up</option>
+                                <option value="200">200% Giant</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="px-2 py-1 bg-indigo-50/70 dark:bg-indigo-950/60 border border-indigo-100 dark:border-indigo-900/60 rounded-md flex items-center justify-between text-xs">
+                        <span class="text-indigo-900 dark:text-indigo-300 font-medium text-[10px]">Grid Tile Count:</span>
+                        <span id="previewSummaryText" class="font-bold text-indigo-700 dark:text-indigo-400 font-mono text-[10px]">8 Pages (4 cols × 2 rows)</span>
+                    </div>
+                </div>
+
+                <!-- STEP 3: Tape Overlap & Assembly Marks (Row 3/3) -->
+                <div class="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-2 flex flex-col justify-between overflow-hidden">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-1.5 text-indigo-700 dark:text-indigo-400 font-bold text-xs">
+                            <span class="w-4 h-4 bg-indigo-100 dark:bg-indigo-950 dark:text-indigo-300 rounded-full flex items-center justify-center text-[10px]">3</span>
+                            <h2 class="text-xs">Tape Margin & Cut Marks</h2>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-1.5 items-center">
+                        <div>
+                            <div class="flex justify-between items-center text-[9px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">
+                                <span>Overlap:</span>
+                                <span id="overlapValue" class="font-bold text-indigo-600 dark:text-indigo-400 font-mono">10 mm</span>
+                            </div>
+                            <input type="range" id="inputOverlap" min="0" max="30" step="2" value="10" class="w-full accent-indigo-600 cursor-pointer h-1 bg-slate-200 dark:bg-slate-700 rounded">
+                        </div>
+                        <div>
+                            <label for="selectLabelPosition" class="block text-[9px] font-semibold text-slate-500 dark:text-slate-400 mb-0.5">Tag Location:</label>
+                            <select id="selectLabelPosition" class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-md px-1 py-0.5 text-[10px] font-medium text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 outline-none">
+                                <option value="bottom" selected>Bottom Margin</option>
+                                <option value="top">Top Margin Strip</option>
+                                <option value="corners">Corner Tags</option>
+                                <option value="none">Disabled</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-x-1 gap-y-0.5 text-xs font-medium text-slate-700 dark:text-slate-300 pt-1 border-t border-slate-100 dark:border-slate-800">
+                        <label class="flex items-center space-x-1.5 cursor-pointer">
+                            <input type="checkbox" id="chkCutLines" checked class="rounded text-indigo-600 focus:ring-indigo-500 w-3 h-3">
+                            <span class="text-[10px]">Crosshairs</span>
+                        </label>
+                        <label class="flex items-center space-x-1.5 cursor-pointer">
+                            <input type="checkbox" id="chkGlueGuide" checked class="rounded text-indigo-600 focus:ring-indigo-500 w-3 h-3">
+                            <span class="text-[10px]">Glue Guides</span>
+                        </label>
+                        <label class="col-span-2 flex items-center space-x-1.5 cursor-pointer">
+                            <input type="checkbox" id="chkCoverPage" checked class="rounded text-indigo-600 focus:ring-indigo-500 w-3 h-3">
+                            <span class="text-[10px]">Include Overview Map Cover Page</span>
+                        </label>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- PINNED DOWNLOAD BUTTONS AT BOTTOM (Side-by-side fit) -->
+            <div class="pt-1.5 shrink-0 bg-slate-100 dark:bg-slate-950 flex items-center gap-1.5 border-t border-slate-200 dark:border-slate-800 mt-1">
+                <button id="btnDownloadPdf" class="flex-1 py-1.5 px-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs shadow transition flex items-center justify-center space-x-1.5 group">
+                    <i data-lucide="download" class="w-3.5 h-3.5 group-hover:translate-y-0.5 transition"></i>
+                    <span>Download Tiled PDF</span>
+                </button>
+                <button id="btnDownloadZip" class="py-1.5 px-2.5 bg-slate-800 dark:bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold rounded-lg text-xs border border-slate-700 transition flex items-center justify-center space-x-1">
+                    <i data-lucide="folder-archive" class="w-3.5 h-3.5 text-slate-300"></i>
+                    <span>ZIP</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- PDF Editor Overlay Panel (Appears when editing) -->
+        <aside id="editorSidebar" class="hidden lg:col-span-4 flex-col h-full bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-2 shadow-sm space-y-2 overflow-hidden">
+            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-1.5">
+                <div class="flex items-center space-x-1.5 text-amber-600 dark:text-amber-400 font-bold text-xs">
+                    <i data-lucide="edit-3" class="w-4 h-4"></i>
+                    <span>PDF Page Editor Mode</span>
+                </div>
+                <button id="btnCancelEdit" class="text-[10px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 rounded text-slate-600 dark:text-slate-300 font-medium">Cancel</button>
+            </div>
+
+            <!-- Editor Tool Selector Tabs -->
+            <div class="grid grid-cols-3 gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
+                <button id="toolPen" class="py-1 text-[10px] font-bold rounded bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs flex items-center justify-center gap-1">
+                    <i data-lucide="pen-tool" class="w-3 h-3"></i> Doodle
+                </button>
+                <button id="toolText" class="py-1 text-[10px] font-semibold rounded text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1">
+                    <i data-lucide="type" class="w-3 h-3"></i> Text
+                </button>
+                <button id="toolCrop" class="py-1 text-[10px] font-semibold rounded text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1">
+                    <i data-lucide="crop" class="w-3 h-3"></i> Crop
+                </button>
+            </div>
+
+            <!-- Tool Options Sub-panel -->
+            <div class="flex-1 bg-slate-50 dark:bg-slate-800/60 rounded-lg p-2 border border-slate-200 dark:border-slate-700/60 space-y-2 overflow-y-auto">
+                <!-- Doodle Options -->
+                <div id="panelPenOpts" class="space-y-2">
+                    <div class="flex items-center justify-between text-[10px] font-semibold">
+                        <span>Pen Color:</span>
+                        <input type="color" id="inputPenColor" value="#ef4444" class="w-6 h-6 rounded cursor-pointer border-0 bg-transparent">
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-[9px] font-semibold text-slate-500 mb-0.5">
+                            <span>Stroke Width:</span>
+                            <span id="txtPenWidth" class="font-mono">4 px</span>
+                        </div>
+                        <input type="range" id="inputPenWidth" min="1" max="20" value="4" class="w-full accent-amber-500 h-1 bg-slate-200 dark:bg-slate-700 rounded">
+                    </div>
+                    <button id="btnClearDoodles" class="w-full py-1 bg-slate-200 dark:bg-slate-700 hover:bg-red-500 hover:text-white text-slate-700 dark:text-slate-200 rounded text-[10px] font-bold transition flex items-center justify-center gap-1">
+                        <i data-lucide="trash-2" class="w-3 h-3"></i> Clear Drawings
+                    </button>
+                </div>
+
+                <!-- Text Options -->
+                <div id="panelTextOpts" class="hidden space-y-2">
+                    <div>
+                        <label class="block text-[9px] font-semibold text-slate-500 mb-0.5">Text to Insert:</label>
+                        <input type="text" id="inputTextString" placeholder="Type text here..." class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-xs font-medium outline-none">
+                    </div>
+                    <div class="flex items-center justify-between text-[10px] font-semibold">
+                        <span>Text Color:</span>
+                        <input type="color" id="inputTextColor" value="#2563eb" class="w-6 h-6 rounded cursor-pointer border-0 bg-transparent">
+                    </div>
+                    <div>
+                        <label class="block text-[9px] font-semibold text-slate-500 mb-0.5">Font Size:</label>
+                        <select id="selectFontSize" class="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-1.5 py-0.5 text-xs font-semibold">
+                            <option value="16">16 px (Small)</option>
+                            <option value="24" selected>24 px (Medium)</option>
+                            <option value="36">36 px (Large)</option>
+                            <option value="48">48 px (Extra Large)</option>
+                        </select>
+                    </div>
+                    <p class="text-[9px] text-slate-400">Click anywhere on the PDF canvas to place text.</p>
+                </div>
+
+                <!-- Crop Options -->
+                <div id="panelCropOpts" class="hidden space-y-2">
+                    <div class="flex items-center justify-between">
+                        <p class="text-[10px] font-bold text-slate-700 dark:text-slate-300">Set Crop Inset Margins (mm):</p>
+                        <button id="btnResetCrop" class="text-[9px] px-1.5 py-0.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-200 font-bold transition">Reset Crop</button>
+                    </div>
+                    <div class="p-1.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/40 rounded text-[9px] text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                        <i data-lucide="mouse-pointer-click" class="w-3 h-3 shrink-0 text-amber-600 dark:text-amber-400"></i>
+                        <span><strong>Freeform Crop:</strong> Click & drag directly on the preview canvas to crop visually!</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-[10px]">
+                        <div>
+                            <div class="flex justify-between text-[9px] font-semibold text-slate-500 mb-0.5">
+                                <span>Top Inset:</span>
+                                <span id="txtCropTop" class="font-mono font-bold text-amber-600 dark:text-amber-400">0 mm</span>
+                            </div>
+                            <input type="range" id="inputCropTop" min="0" max="300" value="0" class="w-full accent-amber-500 h-1 bg-slate-200 dark:bg-slate-700 rounded cursor-pointer">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-[9px] font-semibold text-slate-500 mb-0.5">
+                                <span>Bottom Inset:</span>
+                                <span id="txtCropBottom" class="font-mono font-bold text-amber-600 dark:text-amber-400">0 mm</span>
+                            </div>
+                            <input type="range" id="inputCropBottom" min="0" max="300" value="0" class="w-full accent-amber-500 h-1 bg-slate-200 dark:bg-slate-700 rounded cursor-pointer">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-[9px] font-semibold text-slate-500 mb-0.5">
+                                <span>Left Inset:</span>
+                                <span id="txtCropLeft" class="font-mono font-bold text-amber-600 dark:text-amber-400">0 mm</span>
+                            </div>
+                            <input type="range" id="inputCropLeft" min="0" max="300" value="0" class="w-full accent-amber-500 h-1 bg-slate-200 dark:bg-slate-700 rounded cursor-pointer">
+                        </div>
+                        <div>
+                            <div class="flex justify-between text-[9px] font-semibold text-slate-500 mb-0.5">
+                                <span>Right Inset:</span>
+                                <span id="txtCropRight" class="font-mono font-bold text-amber-600 dark:text-amber-400">0 mm</span>
+                            </div>
+                            <input type="range" id="inputCropRight" min="0" max="300" value="0" class="w-full accent-amber-500 h-1 bg-slate-200 dark:bg-slate-700 rounded cursor-pointer">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Apply / Done Button -->
+            <button id="btnApplyEdit" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs shadow transition flex items-center justify-center space-x-1.5">
+                <i data-lucide="check-circle" class="w-4 h-4"></i>
+                <span>Apply & Finish Editing</span>
+            </button>
+        </aside>
+
+        <!-- Right Interactive Canvas Viewport (8 Cols) -->
+        <section class="lg:col-span-8 flex flex-col h-full overflow-hidden bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            
+            <!-- Viewport Toolbar -->
+            <div class="px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="eye" class="w-4 h-4 text-indigo-600 dark:text-indigo-400"></i>
+                    <span class="text-xs font-bold text-slate-700 dark:text-slate-200">Interactive Visual Crop Box Preview</span>
+                    <span class="text-[9px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.2 rounded font-mono font-medium">Pan: Drag | Zoom: Wheel</span>
+                </div>
+
+                <!-- Zoom & Reset View Controls -->
+                <div class="flex items-center space-x-1">
+                    <button id="btnZoomOut" title="Zoom Out" class="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded transition">
+                        <i data-lucide="zoom-out" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <span id="zoomLevelText" class="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-400 min-w-[40px] text-center">100%</span>
+                    <button id="btnZoomIn" title="Zoom In" class="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 rounded transition">
+                        <i data-lucide="zoom-in" class="w-3.5 h-3.5"></i>
+                    </button>
+                    <div class="h-3 w-px bg-slate-300 dark:bg-slate-700 mx-1"></div>
+                    <button id="btnResetView" title="Reset Viewport Position" class="px-2 py-0.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded text-[10px] font-semibold transition flex items-center gap-1">
+                        <i data-lucide="locate-fixed" class="w-3 h-3"></i> Fit
+                    </button>
+                </div>
+            </div>
+
+            <!-- Viewport Workspace Canvas Area -->
+            <div id="viewportContainer" class="flex-1 min-h-0 relative checkerboard overflow-hidden cursor-grab active:cursor-grabbing flex items-center justify-center">
+                
+                <!-- Center Transformed PDF Canvas Container -->
+                <div id="previewWrapper" class="relative transition-transform duration-75 origin-center canvas-shadow">
+                    <canvas id="pdfCanvas" class="block bg-white rounded-sm"></canvas>
+                    <canvas id="overlayCanvas" class="absolute inset-0 pointer-events-none rounded-sm"></canvas>
+                </div>
+
+                <!-- Empty State Placeholder -->
+                <div id="noPdfNotice" class="hidden absolute inset-0 flex flex-col items-center justify-center bg-slate-900/60 backdrop-blur-xs text-white p-4 text-center">
+                    <i data-lucide="file-warning" class="w-10 h-10 text-amber-400 mb-2"></i>
+                    <p class="font-bold text-sm">No PDF Loaded</p>
+                    <p class="text-xs text-slate-300 mt-1 max-w-xs">Upload a PDF or click "Sample A1" at the top right to generate a test poster preview.</p>
+                </div>
+            </div>
+
+            <!-- Footer Toolbar Status Bar -->
+            <div class="px-3 py-1 bg-slate-100 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 shrink-0 font-mono">
+                <span id="txtCanvasDimensions">Canvas: 0 × 0 px</span>
+                <span id="txtTileGridInfo">Grid: 0 Cols × 0 Rows</span>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Help Modal -->
+    <div id="helpModal" class="hidden fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl max-w-lg w-full p-4 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                <h3 class="font-bold text-sm flex items-center gap-2">
+                    <i data-lucide="help-circle" class="w-4 h-4 text-indigo-500"></i>
+                    How to Print & Assemble Large Posters
+                </h3>
+                <button id="btnCloseHelp" class="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+            
+            <div class="text-xs space-y-2 text-slate-600 dark:text-slate-300">
+                <p><strong>1. Upload or Pick Source:</strong> Upload any PDF file (A0, A1, Arch D, etc.). PosterSlice automatically detects page dimensions.</p>
+                <p><strong>2. Choose Output Size:</strong> Select your home/office paper size (A4, Letter, A3). The preview dynamically calculates the grid.</p>
+                <p><strong>3. Print 100% Actual Size:</strong> Print the generated PDF set on your printer without scaling ("Actual Size" or 100%).</p>
+                <p><strong>4. Trim & Tape:</strong> Align tiles using the corner crosshairs and tape along yellow overlap margins!</p>
+            </div>
+
+            <div class="pt-2 flex justify-end">
+                <button id="btnGotIt" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg text-xs">Got it!</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- MAIN APPLICATION LOGIC SCRIPT -->
+    <script>
+        // Standard Paper Presets Dictionary (in mm)
+        const PRESETS = {
+            '4a0': { name: '4A0', w: 1682, h: 2378 },
+            '2a0': { name: '2A0', w: 1189, h: 1682 },
+            'a0': { name: 'A0', w: 841, h: 1189 },
+            'a1': { name: 'A1', w: 594, h: 841 },
+            'a2': { name: 'A2', w: 420, h: 594 },
+            'a3': { name: 'A3', w: 297, h: 420 },
+            'a4': { name: 'A4', w: 210, h: 297 },
+            'a5': { name: 'A5', w: 148, h: 210 },
+            'a6': { name: 'A6', w: 105, h: 148 },
+            'a7': { name: 'A7', w: 74, h: 105 },
+            'b0': { name: 'B0', w: 1000, h: 1414 },
+            'b1': { name: 'B1', w: 707, h: 1000 },
+            'b2': { name: 'B2', w: 500, h: 707 },
+            'b3': { name: 'B3', w: 353, h: 500 },
+            'b4': { name: 'B4', w: 250, h: 353 },
+            'b5': { name: 'B5', w: 176, h: 250 },
+            'c4': { name: 'C4 Envelope', w: 229, h: 324 },
+            'c5': { name: 'C5 Envelope', w: 162, h: 229 },
+            'dl': { name: 'DL Envelope', w: 110, h: 220 },
+            'letter': { name: 'US Letter', w: 215.9, h: 279.4 },
+            'legal': { name: 'US Legal', w: 215.9, h: 355.6 },
+            'tabloid': { name: 'US Tabloid', w: 279.4, h: 431.8 },
+            'executive': { name: 'US Executive', w: 184.15, h: 266.7 },
+            'statement': { name: 'US Statement', w: 139.7, h: 215.9 },
+            'ansi_a': { name: 'ANSI A', w: 215.9, h: 279.4 },
+            'ansi_b': { name: 'ANSI B', w: 279.4, h: 431.8 },
+            'ansi_c': { name: 'ANSI C', w: 431.8, h: 558.8 },
+            'ansi_d': { name: 'ANSI D', w: 558.8, h: 863.6 },
+            'ansi_e': { name: 'ANSI E', w: 863.6, h: 1117.6 },
+            'arch_a': { name: 'Arch A', w: 228.6, h: 304.8 },
+            'arch_b': { name: 'Arch B', w: 304.8, h: 457.2 },
+            'arch_c': { name: 'Arch C', w: 457.2, h: 609.6 },
+            'arch_d': { name: 'Arch D', w: 609.6, h: 914.4 },
+            'arch_e': { name: 'Arch E', w: 914.4, h: 1219.2 },
+            'photo_4x6': { name: '4x6 in', w: 101.6, h: 152.4 },
+            'photo_5x7': { name: '5x7 in', w: 127, h: 177.8 },
+            'photo_8x10': { name: '8x10 in', w: 203.2, h: 254 },
+            'poster_18x24': { name: 'Poster 18x24', w: 457.2, h: 609.6 },
+            'poster_24x36': { name: 'Poster 24x36', w: 609.6, h: 914.4 }
+        };
+
+        // Application State Management
+        const state = {
+            pdfDoc: null,
+            pdfArrayBuffer: null,
+            currentPage: 1,
+            totalPages: 1,
+            fileName: '',
+            fileSize: 0,
+            rotation: 0, // 0, 90, 180, 270
+            currentRenderTask: null, // Active PDF.js render task reference
+            
+            // Dimensions in MM
+            sourceDim: { w: 594, h: 841 }, // Default A1 Portrait
+            targetPresetKey: 'a4',
+            targetDim: { w: 210, h: 297 }, // A4 Portrait
+            targetOrientation: 'portrait', // 'portrait' | 'landscape'
+            
+            posterScalePercent: 100,
+            overlapMM: 10,
+            tagLocation: 'bottom', // 'bottom', 'top', 'corners', 'none'
+            showCutLines: true,
+            showGlueGuide: true,
+            includeCoverPage: true,
+
+            // PDF Editor State
+            isEditMode: false,
+            activeTool: 'pen', // 'pen' | 'text' | 'crop'
+            penColor: '#ef4444',
+            penWidth: 4,
+            doodleStrokes: [], // Array of stroke points
+            textItems: [], // Array of { text, x, y, color, size }
+            cropInsets: { top: 0, bottom: 0, left: 0, right: 0 },
+            isCropping: false,
+            cropStart: null,
+            cropCurrent: null,
+
+            // Pan & Zoom Engine
+            zoom: 1.0,
+            panX: 0,
+            panY: 0,
+            isDragging: false,
+            isDrawing: false,
+            currentStroke: null,
+            startX: 0,
+            startY: 0,
+            
+            // Grid Calculations
+            cols: 1,
+            rows: 1
+        };
+
+        // Utility Helper Functions
+        function showToast(message, type = 'info') {
+            const container = elements.toastContainer || document.getElementById('toastContainer') || document.body;
+            const toast = document.createElement('div');
+            const bg = type === 'error' ? 'bg-red-600' : type === 'success' ? 'bg-emerald-600' : 'bg-indigo-600';
+            toast.className = `${bg} text-white px-3 py-1.5 rounded-lg shadow-lg text-xs font-semibold flex items-center space-x-1.5 transition-all duration-300 transform translate-y-2 opacity-0 pointer-events-auto`;
+            toast.innerHTML = `<span>${message}</span>`;
+            container.appendChild(toast);
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function setTheme(isDark) {
+            if (isDark) {
+                document.documentElement.classList.add('dark');
+                if (elements.themeIcon) elements.themeIcon.setAttribute('data-lucide', 'sun');
+            } else {
+                document.documentElement.classList.remove('dark');
+                if (elements.themeIcon) elements.themeIcon.setAttribute('data-lucide', 'moon');
+            }
+            if (window.lucide) lucide.createIcons();
+        }
+
+        function updateTargetDimensions() {
+            const preset = PRESETS[state.targetPresetKey] || PRESETS['a4'];
+            if (state.targetOrientation === 'portrait') {
+                state.targetDim = { w: Math.min(preset.w, preset.h), h: Math.max(preset.w, preset.h) };
+            } else {
+                state.targetDim = { w: Math.max(preset.w, preset.h), h: Math.min(preset.w, preset.h) };
+            }
+        }
+
+        // DOM Element Registry
+        const elements = {
+            appBody: document.getElementById('appBody'),
+            btnThemeToggle: document.getElementById('btnThemeToggle'),
+            themeIcon: document.getElementById('themeIcon'),
+            btnHeaderDownloadPdf: document.getElementById('btnHeaderDownloadPdf'),
+            btnSamplePdf: document.getElementById('btnSamplePdf'),
+            btnHelp: document.getElementById('btnHelp'),
+            dropzone: document.getElementById('dropzone'),
+            fileInput: document.getElementById('fileInput'),
+            fileBadge: document.getElementById('fileBadge'),
+            infoFileName: document.getElementById('infoFileName'),
+            infoFileSize: document.getElementById('infoFileSize'),
+            infoDimensions: document.getElementById('infoDimensions'),
+            infoTotalPages: document.getElementById('infoTotalPages'),
+            selectPageNum: document.getElementById('selectPageNum'),
+            selectSourcePreset: document.getElementById('selectSourcePreset'),
+            txtRotationBadge: document.getElementById('txtRotationBadge'),
+            btnRotateCcw: document.getElementById('btnRotateCcw'),
+            btnRotateCw: document.getElementById('btnRotateCw'),
+            btnEditPdf: document.getElementById('btnEditPdf'),
+            selectTargetPreset: document.getElementById('selectTargetPreset'),
+            btnOrientPortrait: document.getElementById('btnOrientPortrait'),
+            btnOrientLandscape: document.getElementById('btnOrientLandscape'),
+            selectScaleMode: document.getElementById('selectScaleMode'),
+            previewSummaryText: document.getElementById('previewSummaryText'),
+            overlapValue: document.getElementById('overlapValue'),
+            inputOverlap: document.getElementById('inputOverlap'),
+            selectLabelPosition: document.getElementById('selectLabelPosition'),
+            chkCutLines: document.getElementById('chkCutLines'),
+            chkGlueGuide: document.getElementById('chkGlueGuide'),
+            chkCoverPage: document.getElementById('chkCoverPage'),
+            btnDownloadPdf: document.getElementById('btnDownloadPdf'),
+            btnDownloadZip: document.getElementById('btnDownloadZip'),
+            viewportContainer: document.getElementById('viewportContainer'),
+            previewWrapper: document.getElementById('previewWrapper'),
+            pdfCanvas: document.getElementById('pdfCanvas'),
+            overlayCanvas: document.getElementById('overlayCanvas'),
+            noPdfNotice: document.getElementById('noPdfNotice'),
+            btnZoomOut: document.getElementById('btnZoomOut'),
+            zoomLevelText: document.getElementById('zoomLevelText'),
+            btnZoomIn: document.getElementById('btnZoomIn'),
+            btnResetView: document.getElementById('btnResetView'),
+            txtCanvasDimensions: document.getElementById('txtCanvasDimensions'),
+            txtTileGridInfo: document.getElementById('txtTileGridInfo'),
+            toastContainer: document.getElementById('toastContainer'),
+            helpModal: document.getElementById('helpModal'),
+            btnCloseHelp: document.getElementById('btnCloseHelp'),
+            btnGotIt: document.getElementById('btnGotIt'),
+
+            // Editor Panel Elements
+            editorSidebar: document.getElementById('editorSidebar'),
+            tilerSidebar: document.querySelector('aside'),
+            btnCancelEdit: document.getElementById('btnCancelEdit'),
+            btnApplyEdit: document.getElementById('btnApplyEdit'),
+            toolPen: document.getElementById('toolPen'),
+            toolText: document.getElementById('toolText'),
+            toolCrop: document.getElementById('toolCrop'),
+            panelPenOpts: document.getElementById('panelPenOpts'),
+            panelTextOpts: document.getElementById('panelTextOpts'),
+            panelCropOpts: document.getElementById('panelCropOpts'),
+            inputPenColor: document.getElementById('inputPenColor'),
+            inputPenWidth: document.getElementById('inputPenWidth'),
+            txtPenWidth: document.getElementById('txtPenWidth'),
+            btnClearDoodles: document.getElementById('btnClearDoodles'),
+            inputTextString: document.getElementById('inputTextString'),
+            inputTextColor: document.getElementById('inputTextColor'),
+            selectFontSize: document.getElementById('selectFontSize'),
+            inputCropTop: document.getElementById('inputCropTop'),
+            inputCropBottom: document.getElementById('inputCropBottom'),
+            inputCropLeft: document.getElementById('inputCropLeft'),
+            inputCropRight: document.getElementById('inputCropRight'),
+            btnResetCrop: document.getElementById('btnResetCrop'),
+            txtCropTop: document.getElementById('txtCropTop'),
+            txtCropBottom: document.getElementById('txtCropBottom'),
+            txtCropLeft: document.getElementById('txtCropLeft'),
+            txtCropRight: document.getElementById('txtCropRight')
+        };
+
+        // Event Listener Bindings
+        function setupEventListeners() {
+            // Theme Toggle
+            elements.btnThemeToggle.addEventListener('click', () => {
+                const isDark = document.documentElement.classList.contains('dark');
+                setTheme(!isDark);
+            });
+
+            // Help Modal
+            elements.btnHelp.addEventListener('click', () => elements.helpModal.classList.remove('hidden'));
+            elements.btnCloseHelp.addEventListener('click', () => elements.helpModal.classList.add('hidden'));
+            elements.btnGotIt.addEventListener('click', () => elements.helpModal.classList.add('hidden'));
+
+            // Edit PDF Toggle
+            elements.btnEditPdf.addEventListener('click', enterEditMode);
+            elements.btnCancelEdit.addEventListener('click', exitEditMode);
+            elements.btnApplyEdit.addEventListener('click', applyPdfEdits);
+
+            // Editor Tool Switches
+            elements.toolPen.addEventListener('click', () => setEditTool('pen'));
+            elements.toolText.addEventListener('click', () => setEditTool('text'));
+            elements.toolCrop.addEventListener('click', () => setEditTool('crop'));
+
+            elements.inputPenWidth.addEventListener('input', (e) => {
+                state.penWidth = parseInt(e.target.value);
+                elements.txtPenWidth.textContent = `${state.penWidth} px`;
+            });
+
+            elements.inputPenColor.addEventListener('input', (e) => { state.penColor = e.target.value; });
+            elements.btnClearDoodles.addEventListener('click', () => {
+                state.doodleStrokes = [];
+                state.textItems = [];
+                renderPreview();
+                showToast('Cleared drawing annotations', 'info');
+            });
+
+            // Crop Inset Sliders & Reset Button
+            ['Top', 'Bottom', 'Left', 'Right'].forEach(side => {
+                const inputEl = elements[`inputCrop${side}`];
+                if (inputEl) {
+                    inputEl.addEventListener('input', (e) => {
+                        const val = Math.max(0, parseInt(e.target.value) || 0);
+                        state.cropInsets[side.toLowerCase()] = val;
+                        updateCropInputUI();
+                        renderPreview();
+                    });
+                }
+            });
+
+            if (elements.btnResetCrop) {
+                elements.btnResetCrop.addEventListener('click', () => {
+                    state.cropInsets = { top: 0, bottom: 0, left: 0, right: 0 };
+                    updateCropInputUI();
+                    renderPreview();
+                    showToast('Crop reset to full page', 'info');
+                });
+            }
+
+            // File Upload Bindings
+            elements.dropzone.addEventListener('click', () => elements.fileInput.click());
+            elements.fileInput.addEventListener('change', handleFileSelect);
+
+            elements.dropzone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                elements.dropzone.classList.add('border-indigo-500', 'bg-indigo-50/50');
+            });
+            elements.dropzone.addEventListener('dragleave', () => {
+                elements.dropzone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+            });
+            elements.dropzone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                elements.dropzone.classList.remove('border-indigo-500', 'bg-indigo-50/50');
+                if (e.dataTransfer.files.length) {
+                    elements.fileInput.files = e.dataTransfer.files;
+                    handleFileSelect();
+                }
+            });
+
+            elements.btnSamplePdf.addEventListener('click', loadSampleBlueprint);
+
+            // Controls Change Events
+            elements.selectPageNum.addEventListener('change', (e) => {
+                state.currentPage = parseInt(e.target.value);
+                renderPreview();
+            });
+
+            elements.selectSourcePreset.addEventListener('change', (e) => {
+                const val = e.target.value;
+                if (val !== 'auto' && PRESETS[val]) {
+                    state.sourceDim = { w: PRESETS[val].w, h: PRESETS[val].h };
+                }
+                renderPreview();
+            });
+
+            elements.btnRotateCcw.addEventListener('click', () => {
+                state.rotation = (state.rotation - 90 + 360) % 360;
+                elements.txtRotationBadge.textContent = `${state.rotation}°`;
+                renderPreview();
+            });
+
+            elements.btnRotateCw.addEventListener('click', () => {
+                state.rotation = (state.rotation + 90) % 360;
+                elements.txtRotationBadge.textContent = `${state.rotation}°`;
+                renderPreview();
+            });
+
+            elements.selectTargetPreset.addEventListener('change', (e) => {
+                state.targetPresetKey = e.target.value;
+                updateTargetDimensions();
+                renderPreview();
+            });
+
+            elements.btnOrientPortrait.addEventListener('click', () => {
+                state.targetOrientation = 'portrait';
+                elements.btnOrientPortrait.className = "flex-1 py-0.5 text-[9px] font-bold rounded bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 shadow-sm transition flex items-center justify-center gap-0.5";
+                elements.btnOrientLandscape.className = "flex-1 py-0.5 text-[9px] font-semibold rounded text-slate-600 dark:text-slate-400 transition flex items-center justify-center gap-0.5";
+                updateTargetDimensions();
+                renderPreview();
+            });
+
+            elements.btnOrientLandscape.addEventListener('click', () => {
+                state.targetOrientation = 'landscape';
+                elements.btnOrientLandscape.className = "flex-1 py-0.5 text-[9px] font-bold rounded bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-400 shadow-sm transition flex items-center justify-center gap-0.5";
+                elements.btnOrientPortrait.className = "flex-1 py-0.5 text-[9px] font-semibold rounded text-slate-600 dark:text-slate-400 transition flex items-center justify-center gap-0.5";
+                updateTargetDimensions();
+                renderPreview();
+            });
+
+            elements.selectScaleMode.addEventListener('change', (e) => {
+                state.posterScalePercent = parseInt(e.target.value);
+                renderPreview();
+            });
+
+            elements.inputOverlap.addEventListener('input', (e) => {
+                state.overlapMM = parseInt(e.target.value);
+                elements.overlapValue.textContent = `${state.overlapMM} mm`;
+                renderPreview();
+            });
+
+            elements.selectLabelPosition.addEventListener('change', (e) => {
+                state.tagLocation = e.target.value;
+                renderPreview();
+            });
+
+            elements.chkCutLines.addEventListener('change', (e) => { state.showCutLines = e.target.checked; renderPreview(); });
+            elements.chkGlueGuide.addEventListener('change', (e) => { state.showGlueGuide = e.target.checked; renderPreview(); });
+            elements.chkCoverPage.addEventListener('change', (e) => { state.includeCoverPage = e.target.checked; });
+
+            // Download Handlers
+            elements.btnDownloadPdf.addEventListener('click', generateTiledPdf);
+            elements.btnHeaderDownloadPdf.addEventListener('click', generateTiledPdf);
+            elements.btnDownloadZip.addEventListener('click', generateZipPackage);
+
+            // Viewport Pan & Zoom & Drawing Listeners
+            setupPanAndZoom();
+        }
+
+        // PDF Editor Navigation Controls
+        function enterEditMode() {
+            if (!state.pdfDoc) {
+                showToast('Please load a PDF document first', 'error');
+                return;
+            }
+            state.isEditMode = true;
+            elements.tilerSidebar.classList.add('hidden');
+            elements.editorSidebar.classList.remove('hidden');
+            elements.editorSidebar.classList.add('flex');
+            setEditTool('pen');
+            renderPreview();
+            showToast('PDF Editor active. Draw, insert text, or crop.', 'info');
+        }
+
+        function exitEditMode() {
+            state.isEditMode = false;
+            elements.editorSidebar.classList.add('hidden');
+            elements.editorSidebar.classList.remove('flex');
+            elements.tilerSidebar.classList.remove('hidden');
+            renderPreview();
+        }
+
+        function setEditTool(tool) {
+            state.activeTool = tool;
+            elements.toolPen.className = tool === 'pen' ? "py-1 text-[10px] font-bold rounded bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs flex items-center justify-center gap-1" : "py-1 text-[10px] font-semibold rounded text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1";
+            elements.toolText.className = tool === 'text' ? "py-1 text-[10px] font-bold rounded bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs flex items-center justify-center gap-1" : "py-1 text-[10px] font-semibold rounded text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1";
+            elements.toolCrop.className = tool === 'crop' ? "py-1 text-[10px] font-bold rounded bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-400 shadow-xs flex items-center justify-center gap-1" : "py-1 text-[10px] font-semibold rounded text-slate-600 dark:text-slate-300 flex items-center justify-center gap-1";
+
+            elements.panelPenOpts.classList.toggle('hidden', tool !== 'pen');
+            elements.panelTextOpts.classList.toggle('hidden', tool !== 'text');
+            elements.panelCropOpts.classList.toggle('hidden', tool !== 'crop');
+        }
+
+        // Bake Edits into PDF Canvas
+        async function applyPdfEdits() {
+            if (!state.pdfDoc) return;
+            showToast('Baking PDF edits...', 'info');
+
+            try {
+                const { jsPDF } = window.jspdf;
+                const canvas = elements.pdfCanvas;
+
+                // Render current canvas + annotations to data URL
+                const combinedCanvas = document.createElement('canvas');
+                combinedCanvas.width = canvas.width;
+                combinedCanvas.height = canvas.height;
+                const ctx = combinedCanvas.getContext('2d');
+
+                // Draw base PDF canvas
+                ctx.drawImage(canvas, 0, 0);
+
+                // Draw Doodles
+                state.doodleStrokes.forEach(stroke => {
+                    ctx.strokeStyle = stroke.color;
+                    ctx.lineWidth = stroke.width;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    stroke.points.forEach((p, i) => {
+                        if (i === 0) ctx.moveTo(p.x, p.y);
+                        else ctx.lineTo(p.x, p.y);
+                    });
+                    ctx.stroke();
+                });
+
+                // Draw Text Items
+                state.textItems.forEach(item => {
+                    ctx.font = `bold ${item.size}px sans-serif`;
+                    ctx.fillStyle = item.color;
+                    ctx.fillText(item.text, item.x, item.y);
+                });
+
+                // Apply Crop Insets
+                const cropL = Math.max(0, (state.cropInsets.left / state.sourceDim.w) * canvas.width);
+                const cropR = Math.max(0, (state.cropInsets.right / state.sourceDim.w) * canvas.width);
+                const cropT = Math.max(0, (state.cropInsets.top / state.sourceDim.h) * canvas.height);
+                const cropB = Math.max(0, (state.cropInsets.bottom / state.sourceDim.h) * canvas.height);
+
+                const srcW = Math.max(1, canvas.width - cropL - cropR);
+                const srcH = Math.max(1, canvas.height - cropT - cropB);
+
+                const croppedCanvas = document.createElement('canvas');
+                croppedCanvas.width = srcW;
+                croppedCanvas.height = srcH;
+                const crCtx = croppedCanvas.getContext('2d');
+                crCtx.fillStyle = '#ffffff';
+                crCtx.fillRect(0, 0, srcW, srcH);
+                crCtx.drawImage(combinedCanvas, cropL, cropT, srcW, srcH, 0, 0, srcW, srcH);
+
+                // Create new single-page PDF with updated cropped dimensions
+                const newWidthMM = Math.max(10, state.sourceDim.w - state.cropInsets.left - state.cropInsets.right);
+                const newHeightMM = Math.max(10, state.sourceDim.h - state.cropInsets.top - state.cropInsets.bottom);
+                const orientation = newWidthMM >= newHeightMM ? 'landscape' : 'portrait';
+
+                const newPdf = new jsPDF({
+                    orientation: orientation,
+                    unit: 'mm',
+                    format: [newWidthMM, newHeightMM]
+                });
+
+                const imgData = croppedCanvas.toDataURL('image/png');
+                newPdf.addImage(imgData, 'PNG', 0, 0, newWidthMM, newHeightMM);
+
+                const editedBuffer = newPdf.output('arraybuffer');
+                state.pdfArrayBuffer = editedBuffer;
+                state.sourceDim = { w: newWidthMM, h: newHeightMM };
+                state.doodleStrokes = [];
+                state.textItems = [];
+                state.cropInsets = { top: 0, bottom: 0, left: 0, right: 0 };
+                updateCropInputUI();
+
+                await loadPdfFromBuffer(editedBuffer);
+                exitEditMode();
+                showToast('Edits applied successfully!', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Failed to apply edits to PDF', 'error');
+            }
+        }
+
+        function updateCropInputUI() {
+            elements.inputCropTop.value = state.cropInsets.top;
+            elements.inputCropBottom.value = state.cropInsets.bottom;
+            elements.inputCropLeft.value = state.cropInsets.left;
+            elements.inputCropRight.value = state.cropInsets.right;
+
+            if (elements.txtCropTop) elements.txtCropTop.textContent = `${state.cropInsets.top} mm`;
+            if (elements.txtCropBottom) elements.txtCropBottom.textContent = `${state.cropInsets.bottom} mm`;
+            if (elements.txtCropLeft) elements.txtCropLeft.textContent = `${state.cropInsets.left} mm`;
+            if (elements.txtCropRight) elements.txtCropRight.textContent = `${state.cropInsets.right} mm`;
+        }
+
+        // Setup Mouse Drag Panning & Drawing Handlers
+        function setupPanAndZoom() {
+            const vp = elements.viewportContainer;
+
+            vp.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+
+                if (state.isEditMode) {
+                    const rect = elements.pdfCanvas.getBoundingClientRect();
+                    const x = (e.clientX - rect.left);
+                    const y = (e.clientY - rect.top);
+
+                    if (x >= 0 && x <= rect.width && y >= 0 && y <= rect.height) {
+                        if (state.activeTool === 'pen') {
+                            state.isDrawing = true;
+                            state.currentStroke = { color: state.penColor, width: state.penWidth, points: [{ x, y }] };
+                            state.doodleStrokes.push(state.currentStroke);
+                            return;
+                        } else if (state.activeTool === 'text') {
+                            const str = elements.inputTextString.value.trim() || 'Sample Text';
+                            state.textItems.push({
+                                text: str,
+                                x,
+                                y,
+                                color: elements.inputTextColor.value,
+                                size: parseInt(elements.selectFontSize.value) || 24
+                            });
+                            renderPreview();
+                            return;
+                        } else if (state.activeTool === 'crop') {
+                            state.isCropping = true;
+                            state.cropStart = { x, y };
+                            state.cropCurrent = { x, y };
+                            return;
+                        }
+                    }
+                }
+
+                state.isDragging = true;
+                state.startX = e.clientX - state.panX;
+                state.startY = e.clientY - state.startX;
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (state.isDrawing && state.currentStroke) {
+                    const rect = elements.pdfCanvas.getBoundingClientRect();
+                    const x = (e.clientX - rect.left);
+                    const y = (e.clientY - rect.top);
+                    state.currentStroke.points.push({ x, y });
+                    renderPreview();
+                    return;
+                }
+
+                if (state.isCropping && state.cropStart) {
+                    const rect = elements.pdfCanvas.getBoundingClientRect();
+                    const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+                    const y = Math.max(0, Math.min(rect.height, e.clientY - rect.top));
+                    state.cropCurrent = { x, y };
+
+                    const minX = Math.min(state.cropStart.x, x);
+                    const maxX = Math.max(state.cropStart.x, x);
+                    const minY = Math.min(state.cropStart.y, y);
+                    const maxY = Math.max(state.cropStart.y, y);
+
+                    const topMM = Math.round((minY / rect.height) * state.sourceDim.h);
+                    const bottomMM = Math.round(((rect.height - maxY) / rect.height) * state.sourceDim.h);
+                    const leftMM = Math.round((minX / rect.width) * state.sourceDim.w);
+                    const rightMM = Math.round(((rect.width - maxX) / rect.width) * state.sourceDim.w);
+
+                    state.cropInsets = { top: topMM, bottom: bottomMM, left: leftMM, right: rightMM };
+                    updateCropInputUI();
+                    renderPreview();
+                    return;
+                }
+
+                if (!state.isDragging) return;
+                state.panX = e.clientX - state.startX;
+                state.panY = e.clientY - state.startY;
+                applyTransform();
+            });
+
+            window.addEventListener('mouseup', () => {
+                if (state.isCropping) {
+                    state.isCropping = false;
+                    state.cropStart = null;
+                    state.cropCurrent = null;
+                }
+                state.isDragging = false;
+                state.isDrawing = false;
+                state.currentStroke = null;
+            });
+
+            vp.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+                state.zoom = Math.min(Math.max(0.3, state.zoom * zoomFactor), 4.0);
+                elements.zoomLevelText.textContent = `${Math.round(state.zoom * 100)}%`;
+                applyTransform();
+            }, { passive: false });
+
+            elements.btnZoomIn.addEventListener('click', () => {
+                state.zoom = Math.min(4.0, state.zoom * 1.2);
+                elements.zoomLevelText.textContent = `${Math.round(state.zoom * 100)}%`;
+                applyTransform();
+            });
+
+            elements.btnZoomOut.addEventListener('click', () => {
+                state.zoom = Math.max(0.3, state.zoom / 1.2);
+                elements.zoomLevelText.textContent = `${Math.round(state.zoom * 100)}%`;
+                applyTransform();
+            });
+
+            elements.btnResetView.addEventListener('click', () => {
+                state.zoom = 1.0;
+                state.panX = 0;
+                state.panY = 0;
+                elements.zoomLevelText.textContent = `100%`;
+                applyTransform();
+            });
+        }
+
+        function applyTransform() {
+            elements.previewWrapper.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
+        }
+
+        // File Selection & Parsing Handler
+        async function handleFileSelect() {
+            const file = elements.fileInput.files[0];
+            if (!file) return;
+
+            state.fileName = file.name;
+            state.fileSize = (file.size / 1024).toFixed(1);
+
+            elements.infoFileName.textContent = state.fileName;
+            elements.infoFileSize.textContent = `${state.fileSize} KB`;
+            elements.fileBadge.textContent = 'Uploaded';
+            elements.fileBadge.className = 'text-[9px] bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded font-bold';
+
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                state.pdfArrayBuffer = arrayBuffer;
+                loadPdfFromBuffer(arrayBuffer);
+            } catch (err) {
+                showToast('Failed to load PDF file', 'error');
+            }
+        }
+
+        // Load Sample Architectural Blueprint
+        function loadSampleBlueprint() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ unit: 'mm', format: [841, 594], orientation: 'landscape' });
+
+            // Draw Blueprint Grid
+            doc.setFillColor(15, 32, 67); // Blueprint Blue
+            doc.rect(0, 0, 841, 594, 'F');
+
+            // Grid lines
+            doc.setDrawColor(40, 75, 130);
+            doc.setLineWidth(0.5);
+            for (let x = 0; x < 841; x += 30) doc.line(x, 0, x, 594);
+            for (let y = 0; y < 594; y += 30) doc.line(0, y, 841, y);
+
+            // Drawings & Vectors
+            doc.setDrawColor(255, 255, 255);
+            doc.setLineWidth(1.5);
+            doc.rect(40, 40, 761, 514);
+
+            // Curves & Schematic Circles
+            doc.setLineWidth(2);
+            doc.circle(420, 297, 180, 'S');
+            doc.circle(420, 297, 120, 'S');
+            
+            doc.setFontSize(28);
+            doc.setTextColor(255, 255, 255);
+            doc.text("A1 ARCHITECTURAL BLUEPRINT SCHEMATIC", 420, 290, { align: "center" });
+            doc.setFontSize(16);
+            doc.text("PosterSlice Multi-Page Slicing Test Vector Document", 420, 315, { align: "center" });
+
+            // Title block
+            doc.rect(550, 450, 230, 90, 'S');
+            doc.line(550, 480, 780, 480);
+            doc.setFontSize(12);
+            doc.text("PROJECT: PosterSlice High-Res Tiler", 560, 470);
+            doc.text("SHEET: A1 Landscape (841 x 594 mm)", 560, 500);
+            doc.text("TARGET PRINT: Split into A4 Pages", 560, 520);
+
+            const sampleBuffer = doc.output('arraybuffer');
+            state.pdfArrayBuffer = sampleBuffer;
+            state.fileName = "Sample_A1_Blueprint.pdf";
+            state.fileSize = 45;
+
+            elements.infoFileName.textContent = state.fileName;
+            elements.infoFileSize.textContent = `45 KB`;
+            elements.fileBadge.textContent = 'Sample A1';
+            elements.fileBadge.className = 'text-[9px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded font-bold';
+
+            loadPdfFromBuffer(sampleBuffer);
+        }
+
+        // Load PDF Document from ArrayBuffer
+        async function loadPdfFromBuffer(buffer) {
+            try {
+                const pdf = await pdfjsLib.getDocument({ data: buffer.slice(0) }).promise;
+                state.pdfDoc = pdf;
+                state.totalPages = pdf.numPages;
+                state.currentPage = 1;
+
+                elements.infoTotalPages.textContent = state.totalPages;
+                elements.selectPageNum.innerHTML = '';
+                for (let i = 1; i <= state.totalPages; i++) {
+                    const opt = document.createElement('option');
+                    opt.value = i;
+                    opt.textContent = `Page ${i}`;
+                    elements.selectPageNum.appendChild(opt);
+                }
+
+                // Read dimensions of Page 1
+                const page = await pdf.getPage(1);
+                const viewport = page.getViewport({ scale: 1.0 });
+                
+                // Convert PDF pt to mm (1 pt = 25.4/72 mm)
+                const ptToMm = 25.4 / 72.0;
+                const sourceW = Math.round(viewport.width * ptToMm);
+                const sourceH = Math.round(viewport.height * ptToMm);
+
+                state.sourceDim = { w: sourceW, h: sourceH };
+                elements.infoDimensions.textContent = `PDF (${sourceW}x${sourceH}mm)`;
+                elements.noPdfNotice.classList.add('hidden');
+
+                renderPreview();
+                showToast('PDF loaded successfully!', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Error parsing PDF file', 'error');
+            }
+        }
+
+        // Render Canvas & Tile Overlays
+        async function renderPreview() {
+            if (!state.pdfDoc) return;
+
+            // Cancel any ongoing render task before starting a new one
+            if (state.currentRenderTask) {
+                try {
+                    state.currentRenderTask.cancel();
+                } catch (e) {}
+                state.currentRenderTask = null;
+            }
+
+            let page;
+            try {
+                page = await state.pdfDoc.getPage(state.currentPage);
+            } catch (e) {
+                return;
+            }
+            
+            // Handle Rotation Dimension Swapping
+            let isSwapped = (state.rotation === 90 || state.rotation === 270);
+            let effSourceW = isSwapped ? state.sourceDim.h : state.sourceDim.w;
+            let effSourceH = isSwapped ? state.sourceDim.w : state.sourceDim.h;
+
+            // Scaled Poster Dimensions
+            effSourceW = Math.round(effSourceW * (state.posterScalePercent / 100));
+            effSourceH = Math.round(effSourceH * (state.posterScalePercent / 100));
+
+            // Grid Tiles Calculation
+            const effTargetW = state.targetDim.w - state.overlapMM;
+            const effTargetH = state.targetDim.h - state.overlapMM;
+
+            state.cols = Math.max(1, Math.ceil((effSourceW - state.overlapMM) / effTargetW));
+            state.rows = Math.max(1, Math.ceil((effSourceH - state.overlapMM) / effTargetH));
+
+            elements.previewSummaryText.textContent = `${state.cols * state.rows} Pages (${state.cols} cols × ${state.rows} rows)`;
+            elements.txtTileGridInfo.textContent = `Grid: ${state.cols} Cols × ${state.rows} Rows (${state.cols * state.rows} Pages total)`;
+
+            // Render PDF to Canvas
+            const containerW = elements.viewportContainer.clientWidth - 60;
+            const containerH = elements.viewportContainer.clientHeight - 60;
+            
+            const scale = Math.min(containerW / effSourceW, containerH / effSourceH, 1.5);
+
+            const canvas = elements.pdfCanvas;
+            const ctx = canvas.getContext('2d');
+            canvas.width = Math.round(effSourceW * scale);
+            canvas.height = Math.round(effSourceH * scale);
+
+            elements.txtCanvasDimensions.textContent = `Canvas: ${canvas.width} × ${canvas.height} px`;
+
+            const renderContext = {
+                canvasContext: ctx,
+                viewport: page.getViewport({ scale: scale * (canvas.width / page.getViewport({ scale: 1.0, rotation: state.rotation }).width), rotation: state.rotation })
+            };
+
+            const renderTask = page.render(renderContext);
+            state.currentRenderTask = renderTask;
+
+            try {
+                await renderTask.promise;
+                state.currentRenderTask = null;
+            } catch (err) {
+                if (err && (err.name === 'RenderingCancelledException' || err.message?.includes('cancelled'))) {
+                    return; // Task was cancelled by a newer preview request
+                }
+                console.error(err);
+                state.currentRenderTask = null;
+                return;
+            }
+
+            // Draw Tile Overlay Crop Box Grid
+            const overlay = elements.overlayCanvas;
+            overlay.width = canvas.width;
+            overlay.height = canvas.height;
+            const octx = overlay.getContext('2d');
+            octx.clearRect(0, 0, overlay.width, overlay.height);
+
+            // Render Active Doodles & Text in Edit Mode Preview
+            if (state.doodleStrokes.length > 0) {
+                state.doodleStrokes.forEach(stroke => {
+                    octx.strokeStyle = stroke.color;
+                    octx.lineWidth = stroke.width;
+                    octx.lineCap = 'round';
+                    octx.beginPath();
+                    stroke.points.forEach((p, i) => {
+                        if (i === 0) octx.moveTo(p.x, p.y);
+                        else octx.lineTo(p.x, p.y);
+                    });
+                    octx.stroke();
+                });
+            }
+
+            if (state.textItems.length > 0) {
+                state.textItems.forEach(item => {
+                    octx.font = `bold ${item.size}px sans-serif`;
+                    octx.fillStyle = item.color;
+                    octx.fillText(item.text, item.x, item.y);
+                });
+            }
+
+            // Draw Crop Insets overlay if set
+            if (state.cropInsets.top || state.cropInsets.bottom || state.cropInsets.left || state.cropInsets.right) {
+                const cL = (state.cropInsets.left / state.sourceDim.w) * canvas.width;
+                const cR = (state.cropInsets.right / state.sourceDim.w) * canvas.width;
+                const cT = (state.cropInsets.top / state.sourceDim.h) * canvas.height;
+                const cB = (state.cropInsets.bottom / state.sourceDim.h) * canvas.height;
+
+                const activeW = canvas.width - cL - cR;
+                const activeH = canvas.height - cT - cB;
+
+                octx.fillStyle = 'rgba(15, 23, 42, 0.65)';
+                octx.fillRect(0, 0, canvas.width, cT); // Top
+                octx.fillRect(0, canvas.height - cB, canvas.width, cB); // Bottom
+                octx.fillRect(0, cT, cL, canvas.height - cT - cB); // Left
+                octx.fillRect(canvas.width - cR, cT, cR, canvas.height - cT - cB); // Right
+
+                // Active Crop Box Border & Handles
+                octx.strokeStyle = '#f59e0b';
+                octx.lineWidth = 2;
+                octx.setLineDash([4, 4]);
+                octx.strokeRect(cL, cT, activeW, activeH);
+                octx.setLineDash([]);
+
+                // Corner Handles
+                const handleSize = 6;
+                octx.fillStyle = '#f59e0b';
+                octx.fillRect(cL - handleSize/2, cT - handleSize/2, handleSize, handleSize);
+                octx.fillRect(cL + activeW - handleSize/2, cT - handleSize/2, handleSize, handleSize);
+                octx.fillRect(cL - handleSize/2, cT + activeH - handleSize/2, handleSize, handleSize);
+                octx.fillRect(cL + activeW - handleSize/2, cT + activeH - handleSize/2, handleSize, handleSize);
+
+                // Dimension Tag
+                const activeW_mm = Math.max(0, state.sourceDim.w - state.cropInsets.left - state.cropInsets.right);
+                const activeH_mm = Math.max(0, state.sourceDim.h - state.cropInsets.top - state.cropInsets.bottom);
+                const cropTag = `Crop Area: ${activeW_mm} × ${activeH_mm} mm`;
+                octx.font = 'bold 11px sans-serif';
+                const tagW = octx.measureText(cropTag).width;
+                
+                octx.fillStyle = 'rgba(245, 158, 11, 0.95)';
+                octx.fillRect(cL + 4, cT + 4, tagW + 8, 16);
+                octx.fillStyle = '#0f172a';
+                octx.fillText(cropTag, cL + 8, cT + 16);
+            }
+
+            // Skip drawing poster tile boxes when actively in editor view
+            if (state.isEditMode) {
+                applyTransform();
+                return;
+            }
+
+            const tileW_px = (state.targetDim.w / effSourceW) * canvas.width;
+            const tileH_px = (state.targetDim.h / effSourceH) * canvas.height;
+            const overlap_px = (state.overlapMM / effSourceW) * canvas.width;
+
+            for (let r = 0; r < state.rows; r++) {
+                for (let c = 0; c < state.cols; c++) {
+                    const x = c * (tileW_px - overlap_px);
+                    const y = r * (tileH_px - overlap_px);
+
+                    // Translucent Yellow Overlap Glue Strip (Only in overlapping margin strips)
+                    if (state.showGlueGuide && state.overlapMM > 0) {
+                        octx.fillStyle = 'rgba(234, 179, 8, 0.35)';
+                        
+                        // Right overlap margin strip (where tile joins adjacent right column)
+                        if (c < state.cols - 1) {
+                            octx.fillRect(x + tileW_px - overlap_px, y, overlap_px, tileH_px);
+                            octx.strokeStyle = 'rgba(217, 119, 6, 0.5)';
+                            octx.lineWidth = 0.8;
+                            octx.strokeRect(x + tileW_px - overlap_px, y, overlap_px, tileH_px);
+                        }
+                        
+                        // Bottom overlap margin strip (where tile joins adjacent lower row)
+                        if (r < state.rows - 1) {
+                            octx.fillRect(x, y + tileH_px - overlap_px, tileW_px, overlap_px);
+                            octx.strokeStyle = 'rgba(217, 119, 6, 0.5)';
+                            octx.lineWidth = 0.8;
+                            octx.strokeRect(x, y + tileH_px - overlap_px, tileW_px, overlap_px);
+                        }
+                    }
+
+                    // Red Dashed Crop Box Lines
+                    octx.strokeStyle = '#ef4444';
+                    octx.lineWidth = 1.5;
+                    octx.setLineDash([5, 4]);
+                    octx.strokeRect(x, y, tileW_px, tileH_px);
+
+                    // Corner Crosshairs
+                    if (state.showCutLines) {
+                        octx.setLineDash([]);
+                        octx.strokeStyle = '#3b82f6';
+                        octx.lineWidth = 1;
+                        const len = 8;
+                        // Top-Left
+                        octx.beginPath(); octx.moveTo(x - len, y); octx.lineTo(x + len, y); octx.stroke();
+                        octx.beginPath(); octx.moveTo(x, y - len); octx.lineTo(x, y + len); octx.stroke();
+                    }
+
+                    // Tile Tag Badge
+                    if (state.tagLocation !== 'none') {
+                        const tagText = `[Tile ${String.fromCharCode(65 + r)}${c + 1}]`;
+                        octx.font = 'bold 10px monospace';
+                        octx.fillStyle = '#1e1b4b';
+                        const textWidth = octx.measureText(tagText).width;
+
+                        let tx = x + 4;
+                        let ty = y + 14;
+
+                        if (state.tagLocation === 'bottom') ty = y + tileH_px - 6;
+
+                        octx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+                        octx.fillRect(tx - 2, ty - 10, textWidth + 4, 12);
+
+                        octx.fillStyle = '#4338ca';
+                        octx.fillText(tagText, tx, ty);
+                    }
+                }
+            }
+
+            applyTransform();
+        }
+
+        // Export Multi-page Tiled PDF
+        async function generateTiledPdf() {
+            if (!state.pdfDoc) {
+                showToast('Please load a PDF first', 'error');
+                return;
+            }
+
+            showToast('Generating Ultra High-Res Tiled PDF (300 DPI)...', 'info');
+
+            try {
+                const { jsPDF } = window.jspdf;
+                const targetW = state.targetDim.w;
+                const targetH = state.targetDim.h;
+
+                const pdf = new jsPDF({
+                    orientation: state.targetOrientation,
+                    unit: 'mm',
+                    format: [targetW, targetH]
+                });
+
+                // Render page at 300 DPI high-resolution for crystal-clear print quality
+                const page = await state.pdfDoc.getPage(state.currentPage);
+                const highResCanvas = document.createElement('canvas');
+                const hrCtx = highResCanvas.getContext('2d', { alpha: false });
+
+                // 300 DPI Scale = 300 / 72 points ≈ 4.1667
+                const printScale = 4.1667;
+                const viewport = page.getViewport({ scale: printScale, rotation: state.rotation });
+                highResCanvas.width = viewport.width;
+                highResCanvas.height = viewport.height;
+
+                hrCtx.imageSmoothingEnabled = true;
+                hrCtx.imageSmoothingQuality = 'high';
+
+                await page.render({ canvasContext: hrCtx, viewport }).promise;
+
+                let isSwapped = (state.rotation === 90 || state.rotation === 270);
+                let effSourceW = isSwapped ? state.sourceDim.h : state.sourceDim.w;
+                let effSourceH = isSwapped ? state.sourceDim.w : state.sourceDim.h;
+
+                effSourceW = Math.round(effSourceW * (state.posterScalePercent / 100));
+                effSourceH = Math.round(effSourceH * (state.posterScalePercent / 100));
+
+                const tileW_mm = targetW;
+                const tileH_mm = targetH;
+                const overlap_mm = state.overlapMM;
+
+                let pageIndex = 0;
+
+                // 1. Cover Page Overview Matrix
+                if (state.includeCoverPage) {
+                    pdf.setFontSize(16);
+                    pdf.setTextColor(30, 41, 59);
+                    pdf.text("PosterSlice Assembly Matrix Map", 15, 20);
+                    
+                    pdf.setFontSize(10);
+                    pdf.text(`Document: ${state.fileName}`, 15, 28);
+                    pdf.text(`Total Grid: ${state.cols} Columns × ${state.rows} Rows (${state.cols * state.rows} Printable Pages)`, 15, 34);
+                    pdf.text(`Target Paper Size: ${PRESETS[state.targetPresetKey]?.name || 'Custom'} (${targetW} x ${targetH} mm)`, 15, 40);
+
+                    // Draw Grid Diagram
+                    const startX = 20;
+                    const startY = 50;
+                    const mapW = Math.min(170, targetW - 40);
+                    const cellW = mapW / state.cols;
+                    const cellH = (cellW * effSourceH) / effSourceW;
+
+                    for (let r = 0; r < state.rows; r++) {
+                        for (let c = 0; c < state.cols; c++) {
+                            const cx = startX + c * cellW;
+                            const cy = startY + r * cellH;
+                            pdf.rect(cx, cy, cellW, cellH);
+                            pdf.setFontSize(8);
+                            pdf.text(`${String.fromCharCode(65 + r)}${c + 1}`, cx + cellW / 2, cy + cellH / 2, { align: 'center' });
+                        }
+                    }
+                    pageIndex++;
+                }
+
+                // 2. Tile Slice Pages Loop
+                for (let r = 0; r < state.rows; r++) {
+                    for (let c = 0; c < state.cols; c++) {
+                        if (pageIndex > 0) pdf.addPage([targetW, targetH], state.targetOrientation);
+
+                        const cropX_mm = c * (tileW_mm - overlap_mm);
+                        const cropY_mm = r * (tileH_mm - overlap_mm);
+
+                        // Calculate pixel coords on source canvas
+                        const pxPerMmX = highResCanvas.width / effSourceW;
+                        const pxPerMmY = highResCanvas.height / effSourceH;
+
+                        const srcX = Math.round(cropX_mm * pxPerMmX);
+                        const srcY = Math.round(cropY_mm * pxPerMmY);
+                        const srcW = Math.round(tileW_mm * pxPerMmX);
+                        const srcH = Math.round(tileH_mm * pxPerMmY);
+
+                        const sliceCanvas = document.createElement('canvas');
+                        sliceCanvas.width = srcW;
+                        sliceCanvas.height = srcH;
+                        const sCtx = sliceCanvas.getContext('2d', { alpha: false });
+                        
+                        sCtx.imageSmoothingEnabled = true;
+                        sCtx.imageSmoothingQuality = 'high';
+                        sCtx.fillStyle = '#FFFFFF';
+                        sCtx.fillRect(0, 0, srcW, srcH);
+                        sCtx.drawImage(highResCanvas, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+
+                        const imgData = sliceCanvas.toDataURL('image/png');
+                        pdf.addImage(imgData, 'PNG', 0, 0, targetW, targetH, undefined, 'FAST');
+
+                        // Draw Tag Label
+                        const label = `[Tile ${String.fromCharCode(65 + r)}${c + 1}] — Attach: Right to ${String.fromCharCode(65 + r)}${c + 2}, Bottom to ${String.fromCharCode(66 + r)}${c + 1}`;
+                        pdf.setFontSize(8);
+                        pdf.setTextColor(79, 70, 229);
+                        pdf.text(label, 10, targetH - 5);
+
+                        pageIndex++;
+                    }
+                }
+
+                pdf.save(`Tiled_Poster_${state.fileName.replace('.pdf', '')}.pdf`);
+                showToast('High-Res PDF Download complete!', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Failed to generate PDF download', 'error');
+            }
+        }
+
+        // Export Individual Tile PDFs in ZIP Archive
+        async function generateZipPackage() {
+            if (!state.pdfDoc) {
+                showToast('Please load a PDF first', 'error');
+                return;
+            }
+
+            showToast('Packaging High-Res ZIP Archive...', 'info');
+
+            try {
+                const zip = new JSZip();
+                const folder = zip.folder("Tiled_PDF_Sheets");
+                const { jsPDF } = window.jspdf;
+
+                const targetW = state.targetDim.w;
+                const targetH = state.targetDim.h;
+
+                const page = await state.pdfDoc.getPage(state.currentPage);
+                const highResCanvas = document.createElement('canvas');
+                const hrCtx = highResCanvas.getContext('2d', { alpha: false });
+
+                const printScale = 4.1667; // 300 DPI high resolution
+                const viewport = page.getViewport({ scale: printScale, rotation: state.rotation });
+                highResCanvas.width = viewport.width;
+                highResCanvas.height = viewport.height;
+
+                hrCtx.imageSmoothingEnabled = true;
+                hrCtx.imageSmoothingQuality = 'high';
+
+                await page.render({ canvasContext: hrCtx, viewport }).promise;
+
+                let isSwapped = (state.rotation === 90 || state.rotation === 270);
+                let effSourceW = isSwapped ? state.sourceDim.h : state.sourceDim.w;
+                let effSourceH = isSwapped ? state.sourceDim.w : state.sourceDim.h;
+
+                effSourceW = Math.round(effSourceW * (state.posterScalePercent / 100));
+                effSourceH = Math.round(effSourceH * (state.posterScalePercent / 100));
+
+                const tileW_mm = targetW;
+                const tileH_mm = targetH;
+                const overlap_mm = state.overlapMM;
+
+                for (let r = 0; r < state.rows; r++) {
+                    for (let c = 0; c < state.cols; c++) {
+                        const tilePdf = new jsPDF({
+                            orientation: state.targetOrientation,
+                            unit: 'mm',
+                            format: [targetW, targetH]
+                        });
+
+                        const cropX_mm = c * (tileW_mm - overlap_mm);
+                        const cropY_mm = r * (tileH_mm - overlap_mm);
+
+                        const pxPerMmX = highResCanvas.width / effSourceW;
+                        const pxPerMmY = highResCanvas.height / effSourceH;
+
+                        const srcX = Math.round(cropX_mm * pxPerMmX);
+                        const srcY = Math.round(cropY_mm * pxPerMmY);
+                        const srcW = Math.round(tileW_mm * pxPerMmX);
+                        const srcH = Math.round(tileH_mm * pxPerMmY);
+
+                        const sliceCanvas = document.createElement('canvas');
+                        sliceCanvas.width = srcW;
+                        sliceCanvas.height = srcH;
+                        const sCtx = sliceCanvas.getContext('2d', { alpha: false });
+
+                        sCtx.imageSmoothingEnabled = true;
+                        sCtx.imageSmoothingQuality = 'high';
+                        sCtx.fillStyle = '#FFFFFF';
+                        sCtx.fillRect(0, 0, srcW, srcH);
+                        sCtx.drawImage(highResCanvas, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
+
+                        const imgData = sliceCanvas.toDataURL('image/png');
+                        tilePdf.addImage(imgData, 'PNG', 0, 0, targetW, targetH, undefined, 'FAST');
+
+                        const label = `[Tile ${String.fromCharCode(65 + r)}${c + 1}]`;
+                        tilePdf.setFontSize(8);
+                        tilePdf.setTextColor(79, 70, 229);
+                        tilePdf.text(label, 10, targetH - 5);
+
+                        const tileBuffer = tilePdf.output('arraybuffer');
+                        folder.file(`Tile_${String.fromCharCode(65 + r)}${c + 1}.pdf`, tileBuffer);
+                    }
+                }
+
+                const content = await zip.generateAsync({ type: "blob" });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(content);
+                link.download = `Poster_Tiles_${state.fileName.replace('.pdf', '')}.zip`;
+                link.click();
+
+                showToast('ZIP archive downloaded!', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Error generating ZIP archive', 'error');
+            }
+        }
+
+        // Application Initialization Entry Point
+        window.addEventListener('DOMContentLoaded', () => {
+            if (window.lucide) lucide.createIcons();
+            setupEventListeners();
+            updateTargetDimensions();
+            
+            // Check Dark Mode Preference
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                setTheme(true);
+            }
+
+            // Automatically load initial Sample A1 Blueprint
+            loadSampleBlueprint();
+        });
+    </script>
+</body>
+</html>
