@@ -1,4 +1,10 @@
 # PDF-file-tiler
+
+## Vibe coding alert 
+
+It's been a while; I have actually coded, and due to AI, I'm bored of relearning again. So, all of this is vibe coded by me. If anyone contributes here, please check this and update this...
+
+## Intro....
 Breaks a large PDF A0 or A1 into A4-sized tiles. These can be pasted back together to make the whole picture.
 
 This tool can be beneficial for many engineering and architecture students who tend to work at night when all the Jumbo Photocopy (xerox) shops are closed, and they need something to Glass Trace (GT) or Topo a large page-size format to a smaller A4-sized format, which can be printed on the home printer and pasted together to create the original A1 or A0 size again.
@@ -26,3 +32,8 @@ Only examples of A0, A1, and A4 are given. But the tool consists of many more pa
 7. Print the PDF.
 8. Paste the edges and overlaps using adhesive tape.
 9. You have your big A1-sized PDF in small tiles, which you can print at home!!!
+
+
+## Contri 
+
+1. My-self
